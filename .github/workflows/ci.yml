@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up mise
+        uses: jdx/mise-action@v3
+
+      - name: Install project tools
+        run: mise install
+
+      - name: Run linters
+        run: mise run lint
+
+  build:
+    name: Build plugin
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up mise
+        uses: jdx/mise-action@v3
+
+      - name: Install project tools
+        run: mise install
+
+      - name: Build release artifact
+        run: mise run release
+
+      - name: Upload plugin artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: streamdeck-linakdesk
+          path: Release/com.pedropombeiro.streamdeck-linakdesk.streamDeckPlugin
