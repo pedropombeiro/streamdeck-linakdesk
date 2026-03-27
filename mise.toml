@@ -38,7 +38,7 @@ description = "Build the Stream Deck plugin bundle"
 depends = ["cli:install"]
 sources = ["Sources/com.pedropombeiro.streamdeck-linakdesk.sdPlugin/**/*"]
 outputs = ["{{env.RELEASE_FILE}}"]
-run = 'streamdeck pack "$SOURCE_DIR" -o "$RELEASE_DIR"'
+run = 'mkdir -p "$RELEASE_DIR" && rm -f "$RELEASE_FILE" && streamdeck pack "$SOURCE_DIR" -o "$RELEASE_DIR"'
 
 [tasks.install]
 description = "Build and open the Stream Deck plugin"

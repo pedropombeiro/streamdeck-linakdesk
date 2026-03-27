@@ -1,19 +1,20 @@
-# Stream Deck Linak Desk Control integration
+# Linak Desk Control for Stream Deck
 
-`Stream Deck Linak Desk Control` connects an Elgato Stream Deck key to a Linak sit/stand desk exposed in Home Assistant.
+Linak Desk Control is a Stream Deck plugin for a Home Assistant-backed sit/stand desk.
+It gives a single key fast, live feedback for desk position and height while keeping the
+interaction simple enough to trust every day.
 
-The plugin requires Stream Deck 4.1 or later.
+## What it does
 
-## Description
+- toggles the desk position with `input_select.select_next`
+- subscribes to Home Assistant state updates over websocket for fast feedback
+- shows the current or last known desk height on the key
+- keeps the last known desk position visible when the controller is offline
+- fades the key icon when the desk is disconnected or sleeping
 
-The plugin provides a single action that:
+## Home Assistant entities
 
-- toggles desk position through `input_select.select_next`
-- listens to Home Assistant state changes over websocket for fast feedback
-- shows the last known height when available
-- keeps the last known position visible when the desk is offline, using a faded icon
-
-## Default Home Assistant entities
+By default the plugin expects these entities:
 
 - `input_select.desk_position`
 - `cover.office_desk`
@@ -21,7 +22,27 @@ The plugin provides a single action that:
 - `binary_sensor.office_desk_connection`
 - `input_number.office_desk_last_height`
 
-All of these can be overridden in the property inspector.
+All entity IDs can be overridden in the property inspector.
+
+## How it behaves
+
+- Pressing the key calls `input_select.select_next` on the configured desk position entity.
+- Position and motion updates come from Home Assistant websocket events.
+- When the desk is offline, the key keeps showing the last known stable position and height.
+- Height values that look like meters are shown in meters instead of centimeters.
+
+## Requirements
+
+- Elgato Stream Deck 6.4 or later
+- Home Assistant reachable from the Stream Deck host
+- a Home Assistant long-lived access token
+
+## Installation
+
+1. Open the latest release on GitHub.
+2. Download `com.pedropombeiro.streamdeck-linakdesk.streamDeckPlugin`.
+3. Double-click the file to install it into Stream Deck.
+4. Add the `Desk position` action to a key and fill in the Home Assistant settings.
 
 ## Development
 
@@ -31,8 +52,9 @@ All of these can be overridden in the property inspector.
 - `mise run` builds the plugin bundle
 - `mise run install` builds and opens the plugin bundle for Stream Deck installation
 
-The build uses Elgato's official Stream Deck CLI, which provides `streamdeck pack` for generating the `.streamDeckPlugin` bundle.
+The build uses Elgato's Stream Deck CLI and produces a `.streamDeckPlugin` bundle in `Release/`.
 
-## Installation
+## Release process
 
-Download the latest release from the GitHub releases page and double-click the `.streamDeckPlugin` file.
+- `CI` runs linting and builds the plugin bundle on pushes and pull requests
+- `Release` builds and uploads the plugin bundle to GitHub Releases when a `v*` tag is pushed

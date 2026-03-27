@@ -25,10 +25,10 @@
   "PropertyInspectorPath": "propertyinspector/index.html",
   "Description": "Control a Linak sit/stand desk through Home Assistant",
   "Name": "Linak Desk Control",
-  "Category": "Desk Control",
+  "Category": "Linak Desk Control",
   "CategoryIcon": "pluginIcon",
   "Icon": "pluginIcon",
-  "URL": "https://pedro.pombei.ro/",
+  "URL": "https://github.com/pedropombeiro/streamdeck-linakdesk",
   "Version": "0.1.0.3",
   "OS": [
     {
