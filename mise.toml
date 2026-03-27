@@ -1,0 +1,46 @@
+[env]
+PLUGIN_NAMESPACE = "com.pedropombeiro.streamdeck-linakdesk"
+SOURCE_DIR = "Sources/com.pedropombeiro.streamdeck-linakdesk.sdPlugin"
+RELEASE_DIR = "Release"
+RELEASE_FILE = "Release/com.pedropombeiro.streamdeck-linakdesk.streamDeckPlugin"
+
+[tools]
+node = "25.8.2"
+python = "3.13"
+pre-commit = "4.3.0"
+
+[tasks.default]
+description = "Build the Stream Deck plugin bundle"
+depends = ["release"]
+
+[tasks.bootstrap]
+description = "Install local prerequisites"
+depends = ["setup"]
+
+[tasks.setup]
+description = "Install local prerequisites"
+run = "brew install coreutils && mise install"
+
+[tasks."cli:install"]
+description = "Install the Stream Deck CLI"
+run = "npm install -g @elgato/cli"
+
+[tasks.lint]
+description = "Run pre-commit linters"
+run = "pre-commit run --all-files"
+
+[tasks."lint:fix"]
+description = "Run pre-commit fixers"
+run = "pre-commit run --all-files --hook-stage manual"
+
+[tasks.release]
+description = "Build the Stream Deck plugin bundle"
+depends = ["cli:install"]
+sources = ["Sources/com.pedropombeiro.streamdeck-linakdesk.sdPlugin/**/*"]
+outputs = ["{{env.RELEASE_FILE}}"]
+run = 'streamdeck pack "$SOURCE_DIR" -o "$RELEASE_DIR"'
+
+[tasks.install]
+description = "Build and open the Stream Deck plugin"
+depends = ["release"]
+run = 'open "$RELEASE_FILE"'

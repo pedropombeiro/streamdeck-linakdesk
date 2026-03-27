@@ -1,0 +1,46 @@
+{
+  "Actions": [
+    {
+      "Icon": "action/images/actionimage",
+      "Name": "Desk position",
+      "States": [
+        {
+          "Image": "action/images/sitting",
+          "Name": "Sitting"
+        },
+        {
+          "Image": "action/images/standing",
+          "Name": "Standing"
+        }
+      ],
+      "Tooltip": "Toggle the desk position between sitting and standing",
+      "UUID": "com.pedropombeiro.streamdeck-linakdesk.toggle",
+      "SupportedInMultiActions": false
+    }
+  ],
+  "SDKVersion": 2,
+  "UUID": "com.pedropombeiro.streamdeck-linakdesk",
+  "Author": "Pedro Pombeiro",
+  "CodePath": "index.html",
+  "PropertyInspectorPath": "propertyinspector/index.html",
+  "Description": "Control a Linak sit/stand desk through Home Assistant",
+  "Name": "Linak Desk Control",
+  "Category": "Desk Control",
+  "CategoryIcon": "pluginIcon",
+  "Icon": "pluginIcon",
+  "URL": "https://pedro.pombei.ro/",
+  "Version": "0.1.0.3",
+  "OS": [
+    {
+      "Platform": "mac",
+      "MinimumVersion": "10.11"
+    },
+    {
+      "Platform": "windows",
+      "MinimumVersion": "10"
+    }
+  ],
+  "Software": {
+    "MinimumVersion": "6.4"
+  }
+}

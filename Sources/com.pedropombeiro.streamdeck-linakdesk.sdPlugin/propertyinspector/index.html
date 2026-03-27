@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,minimum-scale=1,user-scalable=no,minimal-ui,viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <title>com.pedropombeiro.streamdeck-linakdesk Property Inspector</title>
+  <link rel="stylesheet" href="css/sdpi.css">
+  <style>
+    .pi-group {
+      box-sizing: border-box;
+      width: calc(100% - 20px);
+      margin: 10px;
+      padding: 12px 10px 8px;
+      border: 1px solid #4a4a4a;
+      border-radius: 6px;
+      background: #363636;
+    }
+
+    .pi-group-title {
+      margin: 0 0 10px;
+      color: #f1f1f1;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .pi-note {
+      margin: 0 10px 12px;
+      color: #b8b8b8;
+      line-height: 1.4;
+    }
+
+    .pi-help {
+      margin: 4px 10px 12px;
+      color: #8e8e8e;
+      font-size: 11px;
+      line-height: 1.35;
+    }
+
+    .sdpi-item {
+      align-items: flex-start;
+      gap: 8px;
+    }
+
+    .sdpi-item-label {
+      width: 84px;
+      padding-top: 6px;
+    }
+
+    .sdpi-item-value,
+    .sdpi-item-value[type='text'],
+    .sdpi-item-value[type='password'] {
+      box-sizing: border-box;
+      min-width: 0;
+      width: 100%;
+      margin-left: 0;
+      margin-right: 0;
+    }
+
+    .sdpi-item:last-child {
+      margin-bottom: 2px;
+    }
+  </style>
+</head>
+<body>
+  <div class="sdpi-wrapper">
+    <div class="pi-note">Connects to Home Assistant using a base URL and derives the websocket endpoint automatically.</div>
+
+    <div class="pi-group">
+      <div class="pi-group-title">Home Assistant</div>
+      <div class="sdpi-item">
+        <div class="sdpi-item-label">Base URL</div>
+        <input id="homeAssistantUrl" class="sdpi-item-value" type="text" placeholder="https://homeassistant.local:8123" />
+      </div>
+      <div class="pi-help">Use the regular Home Assistant URL. The plugin appends <code>/api/websocket</code>.</div>
+      <div class="sdpi-item">
+        <div class="sdpi-item-label">Access token</div>
+        <input id="accessToken" class="sdpi-item-value" type="password" placeholder="Long-lived access token" />
+      </div>
+    </div>
+
+    <div class="pi-group">
+      <div class="pi-group-title">Entities</div>
+      <div class="sdpi-item">
+        <div class="sdpi-item-label">Toggle input</div>
+        <input id="deskPositionEntityId" class="sdpi-item-value" type="text" placeholder="input_select.desk_position" />
+      </div>
+      <div class="sdpi-item">
+        <div class="sdpi-item-label">Desk cover</div>
+        <input id="deskCoverEntityId" class="sdpi-item-value" type="text" placeholder="cover.office_desk" />
+      </div>
+      <div class="sdpi-item">
+        <div class="sdpi-item-label">Standing sensor</div>
+        <input id="deskStandingEntityId" class="sdpi-item-value" type="text" placeholder="binary_sensor.office_desk_standing" />
+      </div>
+      <div class="sdpi-item">
+        <div class="sdpi-item-label">Connection sensor</div>
+        <input id="deskConnectionEntityId" class="sdpi-item-value" type="text" placeholder="binary_sensor.office_desk_connection" />
+      </div>
+      <div class="sdpi-item">
+        <div class="sdpi-item-label">Height entity</div>
+        <input id="deskHeightEntityId" class="sdpi-item-value" type="text" placeholder="input_number.office_desk_last_height" />
+      </div>
+    </div>
+  </div>
+
+  <div class="sdpi-info-label hidden" style="top: -1000px;" value=""></div>
+  <script src="js/common.js"></script>
+  <script src="js/common_pi.js"></script>
+  <script src="js/index_pi.js"></script>
+</body>
+</html>

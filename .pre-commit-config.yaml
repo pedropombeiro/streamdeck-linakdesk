@@ -1,0 +1,38 @@
+---
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-added-large-files
+      - id: check-executables-have-shebangs
+      - id: check-json
+      - id: check-yaml
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+
+  - repo: https://github.com/editorconfig-checker/editorconfig-checker.python
+    rev: 3.6.1
+    hooks:
+      - id: editorconfig-checker
+        exclude: '(^|/)README\.md$|^Sources/com\.pedropombeiro\.streamdeck-linakdesk\.sdPlugin/(externalWindow\.html|index\.html|propertyinspector/css/sdpi\.css|propertyinspector/js/common\.js)$'
+
+  - repo: local
+    hooks:
+      - id: mise-fmt
+        name: mise fmt (check)
+        entry: mise fmt --check
+        language: system
+        files: '(^|/)\.?mise(\.[\w-]+)*\.toml$'
+        pass_filenames: false
+      - id: mise-fmt-fix
+        name: mise fmt (fix)
+        entry: mise fmt
+        language: system
+        files: '(^|/)\.?mise(\.[\w-]+)*\.toml$'
+        pass_filenames: false
+        stages: [manual]
+      - id: commitlint
+        name: commitlint
+        entry: sh -c 'cat "$1" | npx --yes --package @commitlint/cli -- commitlint' --
+        language: system
+        stages: [commit-msg]

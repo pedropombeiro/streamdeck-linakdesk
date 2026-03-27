@@ -1,0 +1,10 @@
+{
+  "Description": "Control a Linak sit/stand desk using Home Assistant and the Stream Deck",
+  "Name": "Linak Desk Control",
+  "com.pedropombeiro.streamdeck-linakdesk.toggle": {
+    "Name": "Desk position",
+    "Tooltip": "Toggle desk position through Home Assistant"
+  },
+  "Localization": {
+  }
+}

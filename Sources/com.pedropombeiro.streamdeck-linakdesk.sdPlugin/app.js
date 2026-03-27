@@ -1,0 +1,474 @@
+/* global $SD */
+
+const ACTION_UUID = 'com.pedropombeiro.streamdeck-linakdesk.toggle';
+const DEFAULT_SETTINGS = {
+  homeAssistantUrl: '',
+  accessToken: '',
+  deskPositionEntityId: 'input_select.desk_position',
+  deskCoverEntityId: 'cover.office_desk',
+  deskStandingEntityId: 'binary_sensor.office_desk_standing',
+  deskConnectionEntityId: 'binary_sensor.office_desk_connection',
+  deskHeightEntityId: 'input_number.office_desk_last_height',
+  lastKnownPosition: 'sitting',
+  lastKnownHeight: '',
+};
+const RECONNECT_DELAY_MS = 3000;
+
+function normalizeSettings(settings) {
+  const normalized = Object.assign({}, DEFAULT_SETTINGS);
+  Object.keys(DEFAULT_SETTINGS).forEach((key) => {
+    const value = settings && settings[key];
+    if (typeof value === 'string') {
+      normalized[key] = value;
+    }
+  });
+  normalized.lastKnownPosition = normalized.lastKnownPosition === 'standing' ? 'standing' : 'sitting';
+  return normalized;
+}
+
+function sanitizeBaseUrl(url) {
+  if (!url) {
+    return '';
+  }
+  return String(url).trim().replace(/\/+$/, '');
+}
+
+function buildWebSocketUrl(baseUrl) {
+  const sanitized = sanitizeBaseUrl(baseUrl);
+  if (!sanitized) {
+    return '';
+  }
+  if (/^wss?:\/\//i.test(sanitized)) {
+    return sanitized;
+  }
+  if (/^https?:\/\//i.test(sanitized)) {
+    return `${sanitized.replace(/^http/i, 'ws')}/api/websocket`;
+  }
+  return `ws://${sanitized}/api/websocket`;
+}
+
+function parseHeight(value, attributes) {
+  if (value === undefined || value === null || value === '' || value === 'unknown' || value === 'unavailable') {
+    return '';
+  }
+  const numeric = Number(value);
+  if (Number.isFinite(numeric)) {
+    const unit = attributes && typeof attributes.unit_of_measurement === 'string'
+      ? attributes.unit_of_measurement.trim().toLowerCase()
+      : '';
+    const deviceClass = attributes && typeof attributes.device_class === 'string'
+      ? attributes.device_class.trim().toLowerCase()
+      : '';
+    const likelyMeters = unit === 'm' || deviceClass === 'distance' || (numeric > 0 && numeric < 3);
+    if (likelyMeters) {
+      const roundedMeters = Math.round(numeric * 100) / 100;
+      return Number.isInteger(roundedMeters) ? `${roundedMeters} m` : `${roundedMeters.toFixed(2).replace(/0+$/, '').replace(/\.$/, '')} m`;
+    }
+    const displayUnit = unit || 'cm';
+    const rounded = Math.round(numeric * 10) / 10;
+    return Number.isInteger(rounded) ? `${rounded} ${displayUnit}` : `${rounded.toFixed(1)} ${displayUnit}`;
+  }
+  return String(value);
+}
+
+const homeAssistant = {
+  socket: null,
+  connectionKey: '',
+  authToken: '',
+  reconnectTimer: 0,
+  nextMessageId: 1,
+  listeners: {},
+  entityStates: {},
+  pendingCallbacks: {},
+  isConnected: false,
+  manualDisconnect: false,
+
+  addWatcher(controller) {
+    this.listeners[controller.context] = controller;
+    controller.handleConnectionChange(this.isConnected);
+    controller.handleStatesChanged(this.entityStates);
+    this.ensureConnection();
+  },
+
+  removeWatcher(context) {
+    delete this.listeners[context];
+    if (!this.hasWatchers()) {
+      this.disconnect();
+    }
+  },
+
+  hasWatchers() {
+    return Object.keys(this.listeners).length > 0;
+  },
+
+  getActiveConfig() {
+    const contexts = Object.keys(this.listeners);
+    for (let i = 0; i < contexts.length; i += 1) {
+      const controller = this.listeners[contexts[i]];
+      if (controller && controller.hasCredentials()) {
+        return controller.settings;
+      }
+    }
+    return null;
+  },
+
+  ensureConnection() {
+    const config = this.getActiveConfig();
+    if (!config) {
+      this.disconnect();
+      this.notifyConnectionChanged(false);
+      return;
+    }
+
+    const connectionKey = `${sanitizeBaseUrl(config.homeAssistantUrl)}|${config.accessToken}`;
+    if (this.socket && this.connectionKey === connectionKey) {
+      return;
+    }
+
+    this.disconnect(false);
+    this.connectionKey = connectionKey;
+    this.authToken = config.accessToken;
+    this.manualDisconnect = false;
+
+    const websocketUrl = buildWebSocketUrl(config.homeAssistantUrl);
+    if (!websocketUrl) {
+      this.notifyConnectionChanged(false);
+      return;
+    }
+
+    this.socket = new WebSocket(websocketUrl);
+    this.socket.onopen = () => this.handleOpen();
+    this.socket.onmessage = (event) => this.handleMessage(event);
+    this.socket.onerror = () => this.handleClose();
+    this.socket.onclose = () => this.handleClose();
+  },
+
+  disconnect(clearConnection = true) {
+    this.manualDisconnect = true;
+    this.isConnected = false;
+    if (this.reconnectTimer) {
+      window.clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = 0;
+    }
+    this.pendingCallbacks = {};
+    if (this.socket) {
+      this.socket.onopen = null;
+      this.socket.onmessage = null;
+      this.socket.onerror = null;
+      this.socket.onclose = null;
+      try {
+        this.socket.close();
+      } catch (error) {}
+      this.socket = null;
+    }
+    if (clearConnection) {
+      this.connectionKey = '';
+      this.authToken = '';
+      this.entityStates = {};
+    }
+  },
+
+  handleOpen() {
+    this.send({ type: 'auth', access_token: this.authToken });
+  },
+
+  handleClose() {
+    if (!this.socket && !this.isConnected) {
+      return;
+    }
+    this.socket = null;
+    this.isConnected = false;
+    this.notifyConnectionChanged(false);
+    this.scheduleReconnect();
+  },
+
+  scheduleReconnect() {
+    if (this.manualDisconnect || this.reconnectTimer || !this.hasWatchers()) {
+      return;
+    }
+    this.reconnectTimer = window.setTimeout(() => {
+      this.reconnectTimer = 0;
+      this.ensureConnection();
+    }, RECONNECT_DELAY_MS);
+  },
+
+  handleMessage(event) {
+    let message;
+    try {
+      message = JSON.parse(event.data);
+    } catch (error) {
+      return;
+    }
+
+    if (message.type === 'auth_required') {
+      this.send({ type: 'auth', access_token: this.authToken });
+      return;
+    }
+
+    if (message.type === 'auth_ok') {
+      this.isConnected = true;
+      this.notifyConnectionChanged(true);
+      this.send({ id: this.nextId(), type: 'subscribe_events', event_type: 'state_changed' }, (response) => {
+        if (response && response.success) {
+          this.requestInitialStates();
+        }
+      });
+      return;
+    }
+
+    if (message.type === 'auth_invalid') {
+      this.handleClose();
+      return;
+    }
+
+    if (message.type === 'event' && message.event && message.event.data && message.event.data.new_state) {
+      const state = message.event.data.new_state;
+      if (state.entity_id) {
+        this.entityStates[state.entity_id] = state;
+        this.notifyStatesChanged();
+      }
+      return;
+    }
+
+    if (message.type === 'result' && message.id && this.pendingCallbacks[message.id]) {
+      const callback = this.pendingCallbacks[message.id];
+      delete this.pendingCallbacks[message.id];
+      callback(message);
+    }
+  },
+
+  send(payload, callback) {
+    if (!this.socket || this.socket.readyState !== 1) {
+      if (payload && payload.id && callback) {
+        callback({ success: false });
+      }
+      return;
+    }
+    if (payload.id && callback) {
+      this.pendingCallbacks[payload.id] = callback;
+    }
+    this.socket.send(JSON.stringify(payload));
+  },
+
+  nextId() {
+    const nextId = this.nextMessageId;
+    this.nextMessageId += 1;
+    return nextId;
+  },
+
+  requestInitialStates() {
+    this.send({ id: this.nextId(), type: 'get_states' }, (response) => {
+      if (!response || !response.success || !Array.isArray(response.result)) {
+        return;
+      }
+      this.entityStates = {};
+      response.result.forEach((state) => {
+        if (state && state.entity_id) {
+          this.entityStates[state.entity_id] = state;
+        }
+      });
+      this.notifyStatesChanged();
+    });
+  },
+
+  callService(domain, service, serviceData, callback) {
+    this.send(
+      {
+        id: this.nextId(),
+        type: 'call_service',
+        domain: domain,
+        service: service,
+        service_data: serviceData || {},
+      },
+      callback,
+    );
+  },
+
+  notifyConnectionChanged(isConnected) {
+    Object.keys(this.listeners).forEach((context) => {
+      this.listeners[context].handleConnectionChange(isConnected);
+    });
+  },
+
+  notifyStatesChanged() {
+    Object.keys(this.listeners).forEach((context) => {
+      this.listeners[context].handleStatesChanged(this.entityStates);
+    });
+  },
+};
+
+function DeskController(jsonObj) {
+  this.context = jsonObj.context;
+  this.settings = normalizeSettings(jsonObj.payload.settings);
+  this.connectionOnline = false;
+  this.entityStates = {};
+  this.lastRenderKey = '';
+  this.persistTimer = 0;
+}
+
+DeskController.prototype.hasCredentials = function () {
+  return Boolean(this.settings.homeAssistantUrl && this.settings.accessToken);
+};
+
+DeskController.prototype.updateSettings = function (nextSettings) {
+  const previousConnectionKey = `${sanitizeBaseUrl(this.settings.homeAssistantUrl)}|${this.settings.accessToken}`;
+  this.settings = normalizeSettings(nextSettings);
+  const currentConnectionKey = `${sanitizeBaseUrl(this.settings.homeAssistantUrl)}|${this.settings.accessToken}`;
+  if (previousConnectionKey !== currentConnectionKey) {
+    homeAssistant.ensureConnection();
+  }
+  this.render();
+};
+
+DeskController.prototype.persistSettings = function () {
+  if (this.persistTimer) {
+    window.clearTimeout(this.persistTimer);
+  }
+  this.persistTimer = window.setTimeout(() => {
+    this.persistTimer = 0;
+    $SD.api.setSettings(this.context, this.settings);
+  }, 100);
+};
+
+DeskController.prototype.handleConnectionChange = function (isConnected) {
+  this.connectionOnline = isConnected;
+  this.render();
+};
+
+DeskController.prototype.handleStatesChanged = function (entityStates) {
+  this.entityStates = entityStates || {};
+  this.render();
+};
+
+DeskController.prototype.getEntity = function (entityId) {
+  return entityId ? this.entityStates[entityId] : null;
+};
+
+DeskController.prototype.computeViewModel = function () {
+  const standingEntity = this.getEntity(this.settings.deskStandingEntityId);
+  const connectionEntity = this.getEntity(this.settings.deskConnectionEntityId);
+  const heightEntity = this.getEntity(this.settings.deskHeightEntityId);
+  const coverEntity = this.getEntity(this.settings.deskCoverEntityId);
+
+  let stablePosition = this.settings.lastKnownPosition === 'standing' ? 'standing' : 'sitting';
+  if (standingEntity && standingEntity.state === 'on') {
+    stablePosition = 'standing';
+  } else if (standingEntity && standingEntity.state === 'off') {
+    stablePosition = 'sitting';
+  } else if (coverEntity && coverEntity.state === 'open') {
+    stablePosition = 'standing';
+  } else if (coverEntity && coverEntity.state === 'closed') {
+    stablePosition = 'sitting';
+  }
+
+  let motion = 'idle';
+  if (coverEntity && coverEntity.state === 'opening') {
+    motion = 'up';
+  } else if (coverEntity && coverEntity.state === 'closing') {
+    motion = 'down';
+  }
+
+  const entityOnline = !connectionEntity || connectionEntity.state === 'on';
+  const online = Boolean(this.connectionOnline && entityOnline);
+  if (!online) {
+    motion = 'idle';
+  }
+
+  if (motion === 'idle' && this.settings.lastKnownPosition !== stablePosition) {
+    this.settings.lastKnownPosition = stablePosition;
+    this.persistSettings();
+  }
+
+  const height = heightEntity ? parseHeight(heightEntity.state, heightEntity.attributes) : this.settings.lastKnownHeight;
+  if (height && this.settings.lastKnownHeight !== height) {
+    this.settings.lastKnownHeight = height;
+    this.persistSettings();
+  }
+
+  let title = height || '';
+  if (!title) {
+    if (motion === 'up') {
+      title = 'UP';
+    } else if (motion === 'down') {
+      title = 'DOWN';
+    } else {
+      title = stablePosition === 'standing' ? 'STAND' : 'SIT';
+    }
+  }
+
+  return {
+    image: online ? `action/images/${stablePosition}` : `action/images/${stablePosition}-offline`,
+    state: stablePosition === 'standing' ? 1 : 0,
+    title: title,
+  };
+};
+
+DeskController.prototype.render = function () {
+  const model = this.computeViewModel();
+  const renderKey = [model.image, model.state, model.title].join('|');
+  if (renderKey === this.lastRenderKey) {
+    return;
+  }
+  this.lastRenderKey = renderKey;
+  $SD.api.send(this.context, 'setState', { payload: { state: model.state } });
+  $SD.api.setTitle(this.context, model.title);
+  $SD.api.setImage(this.context, model.image, 0);
+};
+
+DeskController.prototype.toggle = function () {
+  if (!this.hasCredentials()) {
+    $SD.api.showAlert(this.context);
+    return;
+  }
+
+  homeAssistant.callService(
+    'input_select',
+    'select_next',
+    { entity_id: this.settings.deskPositionEntityId },
+    (response) => {
+      if (!response || !response.success) {
+        $SD.api.showAlert(this.context);
+        return;
+      }
+      $SD.api.showOk(this.context);
+    },
+  );
+};
+
+const action = {
+  controllers: {},
+
+  ensureController(jsn) {
+    let controller = this.controllers[jsn.context];
+    if (!controller) {
+      controller = new DeskController(jsn);
+      this.controllers[jsn.context] = controller;
+      homeAssistant.addWatcher(controller);
+    }
+    return controller;
+  },
+
+  onWillAppear(jsn) {
+    this.ensureController(jsn).updateSettings(jsn.payload.settings);
+  },
+
+  onWillDisappear(jsn) {
+    delete this.controllers[jsn.context];
+    homeAssistant.removeWatcher(jsn.context);
+  },
+
+  onDidReceiveSettings(jsn) {
+    this.ensureController(jsn).updateSettings(jsn.payload.settings);
+  },
+
+  onKeyUp(jsn) {
+    this.ensureController(jsn).toggle();
+  },
+};
+
+$SD.on('connected', () => {
+  $SD.on(`${ACTION_UUID}.willAppear`, (jsonObj) => action.onWillAppear(jsonObj));
+  $SD.on(`${ACTION_UUID}.willDisappear`, (jsonObj) => action.onWillDisappear(jsonObj));
+  $SD.on(`${ACTION_UUID}.didReceiveSettings`, (jsonObj) => action.onDidReceiveSettings(jsonObj));
+  $SD.on(`${ACTION_UUID}.keyUp`, (jsonObj) => action.onKeyUp(jsonObj));
+});
