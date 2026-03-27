@@ -26,8 +26,14 @@ jobs:
       - name: Build release artifact
         run: mise run release
 
+      - name: Write release version file
+        run: printf '%s
+' "${GITHUB_REF_NAME}" > Release/VERSION.txt
+
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
         with:
-          files: Release/com.pedropombeiro.streamdeck-linakdesk.streamDeckPlugin
+          files: |
+            Release/com.pedropombeiro.streamdeck-linakdesk.streamDeckPlugin
+            Release/VERSION.txt
           generate_release_notes: true

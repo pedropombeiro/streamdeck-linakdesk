@@ -62,7 +62,7 @@ function parseHeight(value, attributes) {
     const likelyMeters = unit === 'm' || deviceClass === 'distance' || (numeric > 0 && numeric < 3);
     if (likelyMeters) {
       const roundedMeters = Math.round(numeric * 100) / 100;
-      return Number.isInteger(roundedMeters) ? `${roundedMeters} m` : `${roundedMeters.toFixed(2).replace(/0+$/, '').replace(/\.$/, '')} m`;
+      return `${roundedMeters.toFixed(2)} m`;
     }
     const displayUnit = unit || 'cm';
     const rounded = Math.round(numeric * 10) / 10;
