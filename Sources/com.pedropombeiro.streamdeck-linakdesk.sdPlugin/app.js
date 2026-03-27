@@ -1,6 +1,7 @@
 /* global $SD */
 
 const ACTION_UUID = 'com.pedropombeiro.streamdeck-linakdesk.toggle';
+const PROGRESS_FRAME_COUNT = 3;
 const DEFAULT_SETTINGS = {
   homeAssistantUrl: '',
   accessToken: '',
@@ -304,6 +305,9 @@ function DeskController(jsonObj) {
   this.entityStates = {};
   this.lastRenderKey = '';
   this.persistTimer = 0;
+  this.progressFrame = 0;
+  this.progressTimer = 0;
+  this.motionUntil = 0;
 }
 
 DeskController.prototype.hasCredentials = function () {
@@ -340,6 +344,10 @@ DeskController.prototype.handleStatesChanged = function (entityStates) {
   this.render();
 };
 
+DeskController.prototype.markMotionActivity = function () {
+  this.motionUntil = Date.now() + 4000;
+};
+
 DeskController.prototype.getEntity = function (entityId) {
   return entityId ? this.entityStates[entityId] : null;
 };
@@ -372,6 +380,8 @@ DeskController.prototype.computeViewModel = function () {
   const online = Boolean(this.connectionOnline && entityOnline);
   if (!online) {
     motion = 'idle';
+  } else if (motion === 'idle' && this.motionUntil > Date.now()) {
+    motion = 'progress';
   }
 
   if (motion === 'idle' && this.settings.lastKnownPosition !== stablePosition) {
@@ -391,20 +401,53 @@ DeskController.prototype.computeViewModel = function () {
       title = 'UP';
     } else if (motion === 'down') {
       title = 'DOWN';
+    } else if (motion === 'progress') {
+      title = stablePosition === 'standing' ? 'UP' : 'DOWN';
     } else {
       title = stablePosition === 'standing' ? 'STAND' : 'SIT';
     }
   }
 
+  const isProgressing = online && motion !== 'idle';
+  let image = online ? `action/images/${stablePosition}` : `action/images/${stablePosition}-offline`;
+  if (isProgressing) {
+    image = `action/images/${stablePosition}-progress-${this.progressFrame + 1}`;
+  }
+
   return {
-    image: online ? `action/images/${stablePosition}` : `action/images/${stablePosition}-offline`,
+    image: image,
     state: stablePosition === 'standing' ? 1 : 0,
     title: title,
+    isProgressing: isProgressing,
   };
+};
+
+DeskController.prototype.startProgressAnimation = function () {
+  if (this.progressTimer) {
+    return;
+  }
+  this.progressTimer = window.setInterval(() => {
+    this.progressFrame = (this.progressFrame + 1) % PROGRESS_FRAME_COUNT;
+    this.lastRenderKey = '';
+    this.render();
+  }, 250);
+};
+
+DeskController.prototype.stopProgressAnimation = function () {
+  if (this.progressTimer) {
+    window.clearInterval(this.progressTimer);
+    this.progressTimer = 0;
+  }
+  this.progressFrame = 0;
 };
 
 DeskController.prototype.render = function () {
   const model = this.computeViewModel();
+  if (model.isProgressing) {
+    this.startProgressAnimation();
+  } else {
+    this.stopProgressAnimation();
+  }
   const renderKey = [model.image, model.state, model.title].join('|');
   if (renderKey === this.lastRenderKey) {
     return;
@@ -430,6 +473,9 @@ DeskController.prototype.toggle = function () {
         $SD.api.showAlert(this.context);
         return;
       }
+      this.markMotionActivity();
+      this.lastRenderKey = '';
+      this.render();
       $SD.api.showOk(this.context);
     },
   );
@@ -453,6 +499,10 @@ const action = {
   },
 
   onWillDisappear(jsn) {
+    const controller = this.controllers[jsn.context];
+    if (controller) {
+      controller.stopProgressAnimation();
+    }
     delete this.controllers[jsn.context];
     homeAssistant.removeWatcher(jsn.context);
   },
