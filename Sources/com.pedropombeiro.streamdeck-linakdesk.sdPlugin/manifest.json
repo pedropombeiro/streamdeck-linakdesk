@@ -13,7 +13,7 @@
           "Name": "Standing"
         }
       ],
-      "Tooltip": "Toggle the desk position between sitting and standing",
+      "Tooltip": "Press to toggle the desk, long press to connect the controller",
       "UUID": "com.pedropombeiro.streamdeck-linakdesk.toggle",
       "SupportedInMultiActions": false
     }

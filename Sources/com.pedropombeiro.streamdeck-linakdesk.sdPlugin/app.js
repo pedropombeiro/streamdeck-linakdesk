@@ -6,6 +6,7 @@ const DEFAULT_SETTINGS = {
   accessToken: '',
   deskPositionEntityId: 'input_select.desk_position',
   deskCoverEntityId: 'cover.office_desk',
+  deskConnectButtonEntityId: 'button.office_desk_connect',
   deskStandingEntityId: 'binary_sensor.office_desk_standing',
   deskConnectionEntityId: 'binary_sensor.office_desk_connection',
   deskHeightEntityId: 'input_number.office_desk_last_height',
@@ -13,6 +14,7 @@ const DEFAULT_SETTINGS = {
   lastKnownHeight: '',
 };
 const RECONNECT_DELAY_MS = 3000;
+const LONG_PRESS_DELAY_MS = 600;
 
 function normalizeSettings(settings) {
   const normalized = Object.assign({}, DEFAULT_SETTINGS);
@@ -304,6 +306,11 @@ function DeskController(jsonObj) {
   this.entityStates = {};
   this.lastRenderKey = '';
   this.persistTimer = 0;
+  this.pressTimer = 0;
+  this.longPressTriggered = false;
+  this.keyIsDown = false;
+  this.pendingShortPress = false;
+  this.wasMoving = false;
 }
 
 DeskController.prototype.hasCredentials = function () {
@@ -337,11 +344,58 @@ DeskController.prototype.handleConnectionChange = function (isConnected) {
 
 DeskController.prototype.handleStatesChanged = function (entityStates) {
   this.entityStates = entityStates || {};
+  const moving = this.isMoving();
+  if (this.pendingShortPress && this.wasMoving && !moving) {
+    this.pendingShortPress = false;
+    $SD.api.showOk(this.context);
+  }
+  this.wasMoving = moving;
   this.render();
 };
 
 DeskController.prototype.getEntity = function (entityId) {
   return entityId ? this.entityStates[entityId] : null;
+};
+
+DeskController.prototype.getMotionState = function () {
+  const coverEntity = this.getEntity(this.settings.deskCoverEntityId);
+  if (coverEntity && coverEntity.state === 'opening') {
+    return 'up';
+  }
+  if (coverEntity && coverEntity.state === 'closing') {
+    return 'down';
+  }
+  return 'idle';
+};
+
+DeskController.prototype.isMoving = function () {
+  return this.getMotionState() !== 'idle';
+};
+
+DeskController.prototype.clearPressTimer = function () {
+  if (this.pressTimer) {
+    window.clearTimeout(this.pressTimer);
+    this.pressTimer = 0;
+  }
+};
+
+DeskController.prototype.selectNextPosition = function () {
+  homeAssistant.callService(
+    'input_select',
+    'select_next',
+    { entity_id: this.settings.deskPositionEntityId },
+    (response) => {
+      if (!response || !response.success) {
+        this.pendingShortPress = false;
+        $SD.api.showAlert(this.context);
+        return;
+      }
+      if (!this.wasMoving && !this.isMoving()) {
+        this.pendingShortPress = false;
+        $SD.api.showOk(this.context);
+      }
+    },
+  );
 };
 
 DeskController.prototype.computeViewModel = function () {
@@ -361,12 +415,7 @@ DeskController.prototype.computeViewModel = function () {
     stablePosition = 'sitting';
   }
 
-  let motion = 'idle';
-  if (coverEntity && coverEntity.state === 'opening') {
-    motion = 'up';
-  } else if (coverEntity && coverEntity.state === 'closing') {
-    motion = 'down';
-  }
+  const motion = this.getMotionState();
 
   const entityOnline = !connectionEntity || connectionEntity.state === 'on';
   const online = Boolean(this.connectionOnline && entityOnline);
@@ -421,10 +470,21 @@ DeskController.prototype.toggle = function () {
     return;
   }
 
+  this.pendingShortPress = true;
+  this.wasMoving = this.isMoving();
+  this.selectNextPosition();
+};
+
+DeskController.prototype.connectDeskController = function () {
+  if (!this.hasCredentials() || !this.settings.deskConnectButtonEntityId) {
+    $SD.api.showAlert(this.context);
+    return;
+  }
+
   homeAssistant.callService(
-    'input_select',
-    'select_next',
-    { entity_id: this.settings.deskPositionEntityId },
+    'button',
+    'press',
+    { entity_id: this.settings.deskConnectButtonEntityId },
     (response) => {
       if (!response || !response.success) {
         $SD.api.showAlert(this.context);
@@ -433,6 +493,30 @@ DeskController.prototype.toggle = function () {
       $SD.api.showOk(this.context);
     },
   );
+};
+
+DeskController.prototype.handleKeyDown = function () {
+  this.keyIsDown = true;
+  this.clearPressTimer();
+  this.longPressTriggered = false;
+  this.pressTimer = window.setTimeout(() => {
+    this.pressTimer = 0;
+    if (!this.keyIsDown) {
+      return;
+    }
+    this.longPressTriggered = true;
+    this.connectDeskController();
+  }, LONG_PRESS_DELAY_MS);
+};
+
+DeskController.prototype.handleKeyUp = function () {
+  this.keyIsDown = false;
+  this.clearPressTimer();
+  if (this.longPressTriggered) {
+    this.longPressTriggered = false;
+    return;
+  }
+  this.toggle();
 };
 
 const action = {
@@ -461,8 +545,12 @@ const action = {
     this.ensureController(jsn).updateSettings(jsn.payload.settings);
   },
 
+  onKeyDown(jsn) {
+    this.ensureController(jsn).handleKeyDown();
+  },
+
   onKeyUp(jsn) {
-    this.ensureController(jsn).toggle();
+    this.ensureController(jsn).handleKeyUp();
   },
 };
 
@@ -470,5 +558,6 @@ $SD.on('connected', () => {
   $SD.on(`${ACTION_UUID}.willAppear`, (jsonObj) => action.onWillAppear(jsonObj));
   $SD.on(`${ACTION_UUID}.willDisappear`, (jsonObj) => action.onWillDisappear(jsonObj));
   $SD.on(`${ACTION_UUID}.didReceiveSettings`, (jsonObj) => action.onDidReceiveSettings(jsonObj));
+  $SD.on(`${ACTION_UUID}.keyDown`, (jsonObj) => action.onKeyDown(jsonObj));
   $SD.on(`${ACTION_UUID}.keyUp`, (jsonObj) => action.onKeyUp(jsonObj));
 });

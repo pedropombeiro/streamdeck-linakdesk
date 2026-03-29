@@ -3,6 +3,9 @@ PLUGIN_NAMESPACE = "com.pedropombeiro.streamdeck-linakdesk"
 SOURCE_DIR = "Sources/com.pedropombeiro.streamdeck-linakdesk.sdPlugin"
 RELEASE_DIR = "Release"
 RELEASE_FILE = "Release/com.pedropombeiro.streamdeck-linakdesk.streamDeckPlugin"
+STREAM_DECK_PLUGINS_DIR = "~/Library/Application Support/com.elgato.StreamDeck/Plugins"
+INSTALLED_PLUGIN_DIR = "~/Library/Application Support/com.elgato.StreamDeck/Plugins/com.pedropombeiro.streamdeck-linakdesk.sdPlugin"
+INSTALLED_PLUGIN_BACKUP_DIR = "~/Library/Application Support/com.elgato.StreamDeck/Plugins/com.pedropombeiro.streamdeck-linakdesk.sdPlugin.bak"
 
 [tools]
 node = "25.8.2"
@@ -44,3 +47,8 @@ run = 'mkdir -p "$RELEASE_DIR" && rm -f "$RELEASE_FILE" && streamdeck pack "$SOU
 description = "Build and open the Stream Deck plugin"
 depends = ["release"]
 run = 'open "$RELEASE_FILE"'
+
+[tasks."install:local"]
+description = "Build and install the plugin into Stream Deck's plugins directory"
+depends = ["release"]
+run = "python3 mise/tasks/install-local"

@@ -1,0 +1,42 @@
+#!/usr/bin/env python3
+
+import os
+import shutil
+import subprocess
+import time
+import zipfile
+from pathlib import Path
+
+
+release_file = Path(os.path.expanduser(os.environ["RELEASE_FILE"]))
+plugins_dir = Path(os.path.expanduser(os.environ["STREAM_DECK_PLUGINS_DIR"]))
+installed_plugin_dir = Path(os.path.expanduser(os.environ["INSTALLED_PLUGIN_DIR"]))
+backup_plugin_dir = Path(os.path.expanduser(os.environ["INSTALLED_PLUGIN_BACKUP_DIR"]))
+
+if not release_file.exists():
+    raise SystemExit(f"Release file does not exist: {release_file}")
+
+if not plugins_dir.exists():
+    raise SystemExit(f"Plugins directory does not exist: {plugins_dir}")
+
+if backup_plugin_dir.exists():
+    shutil.rmtree(backup_plugin_dir)
+
+if installed_plugin_dir.exists():
+    installed_plugin_dir.rename(backup_plugin_dir)
+
+with zipfile.ZipFile(release_file) as archive:
+    archive.extractall(plugins_dir)
+
+installed_app_js = installed_plugin_dir / "app.js"
+if not installed_app_js.exists():
+    raise SystemExit(f"Installed app.js not found after extraction: {installed_app_js}")
+
+print(f"Installed plugin extracted to {installed_plugin_dir}")
+
+subprocess.run(["pkill", "-x", "Stream Deck"], check=False)
+time.sleep(1)
+subprocess.run(
+    ["osascript", "-e", 'tell application id "com.elgato.StreamDeck" to activate'],
+    check=False,
+)

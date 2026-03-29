@@ -5,6 +5,7 @@ const DEFAULT_SETTINGS = {
   accessToken: '',
   deskPositionEntityId: 'input_select.desk_position',
   deskCoverEntityId: 'cover.office_desk',
+  deskConnectButtonEntityId: 'button.office_desk_connect',
   deskStandingEntityId: 'binary_sensor.office_desk_standing',
   deskConnectionEntityId: 'binary_sensor.office_desk_connection',
   deskHeightEntityId: 'input_number.office_desk_last_height',
