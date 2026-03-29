@@ -5,9 +5,16 @@ on:
     tags:
       - 'v*'
   workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release (for example v0.1.0.20)'
+        required: true
 
 permissions:
   contents: write
+
+env:
+  RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref_name }}
 
 jobs:
   publish:
@@ -28,11 +35,12 @@ jobs:
 
       - name: Write release version file
         run: |
-          printf '%s\n' "${GITHUB_REF_NAME}" > Release/VERSION.txt
+          printf '%s\n' "${RELEASE_TAG}" > Release/VERSION.txt
 
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ env.RELEASE_TAG }}
           files: |
             Release/com.pedropombeiro.streamdeck-linakdesk.streamDeckPlugin
             Release/VERSION.txt
