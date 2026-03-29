@@ -309,8 +309,6 @@ function DeskController(jsonObj) {
   this.pressTimer = 0;
   this.longPressTriggered = false;
   this.keyIsDown = false;
-  this.pendingShortPress = false;
-  this.wasMoving = false;
 }
 
 DeskController.prototype.hasCredentials = function () {
@@ -344,12 +342,6 @@ DeskController.prototype.handleConnectionChange = function (isConnected) {
 
 DeskController.prototype.handleStatesChanged = function (entityStates) {
   this.entityStates = entityStates || {};
-  const moving = this.isMoving();
-  if (this.pendingShortPress && this.wasMoving && !moving) {
-    this.pendingShortPress = false;
-    $SD.api.showOk(this.context);
-  }
-  this.wasMoving = moving;
   this.render();
 };
 
@@ -386,14 +378,10 @@ DeskController.prototype.selectNextPosition = function () {
     { entity_id: this.settings.deskPositionEntityId },
     (response) => {
       if (!response || !response.success) {
-        this.pendingShortPress = false;
         $SD.api.showAlert(this.context);
         return;
       }
-      if (!this.wasMoving && !this.isMoving()) {
-        this.pendingShortPress = false;
-        $SD.api.showOk(this.context);
-      }
+      $SD.api.showOk(this.context);
     },
   );
 };
@@ -415,7 +403,7 @@ DeskController.prototype.computeViewModel = function () {
     stablePosition = 'sitting';
   }
 
-  const motion = this.getMotionState();
+  let motion = this.getMotionState();
 
   const entityOnline = !connectionEntity || connectionEntity.state === 'on';
   const online = Boolean(this.connectionOnline && entityOnline);
@@ -470,8 +458,6 @@ DeskController.prototype.toggle = function () {
     return;
   }
 
-  this.pendingShortPress = true;
-  this.wasMoving = this.isMoving();
   this.selectNextPosition();
 };
 
