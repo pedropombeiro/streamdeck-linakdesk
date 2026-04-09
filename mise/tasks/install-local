@@ -34,6 +34,12 @@ if not installed_app_js.exists():
 
 print(f"Installed plugin extracted to {installed_plugin_dir}")
 
+plugin_namespace = os.environ.get("PLUGIN_NAMESPACE", "")
+cache_dir = Path.home() / "Library/Caches/elgato/StreamDeck/QtWebEngine" / plugin_namespace
+if cache_dir.exists():
+    shutil.rmtree(cache_dir)
+    print(f"Cleared QtWebEngine cache at {cache_dir}")
+
 subprocess.run(["pkill", "-x", "Stream Deck"], check=False)
 time.sleep(1)
 subprocess.run(

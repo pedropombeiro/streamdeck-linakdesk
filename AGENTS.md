@@ -18,6 +18,8 @@ This repo builds a local Stream Deck plugin for a Home Assistant-backed Linak de
 - `mise run install:local` is the preferred local reinstall path because it extracts the built plugin into Stream Deck's plugins directory and restarts the app.
 - After reinstalling, confirm the installed `app.js` contains the expected new code before trusting runtime behavior.
 
+- Stream Deck's QtWebEngine caches plugin files at `~/Library/Caches/elgato/StreamDeck/QtWebEngine/com.pedropombeiro.streamdeck-linakdesk/`. Replacing the installed plugin files without clearing this cache can result in stale code running. `mise run install:local` clears this cache automatically.
+
 ## Logging And Debugging
 
 - Runtime plugin logging via `console.log` can be useful, but only after confirming the installed plugin files are current.
