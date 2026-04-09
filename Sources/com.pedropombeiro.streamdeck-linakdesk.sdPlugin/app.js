@@ -314,6 +314,7 @@ function DeskController(jsonObj) {
   this.connecting = false;
   this.connectingTimer = 0;
   this.renderSuppressedUntil = 0;
+  this.pendingToggle = false;
 }
 
 DeskController.prototype.hasCredentials = function () {
@@ -356,7 +357,9 @@ DeskController.prototype.handleStatesChanged = function (entityStates) {
   this.entityStates = entityStates || {};
   const connectionEntity = this.getEntity(this.settings.deskConnectionEntityId);
   if (this.connecting && connectionEntity && connectionEntity.state === 'on') {
+    const hadPendingToggle = this.pendingToggle;
     this.connecting = false;
+    this.pendingToggle = false;
     this.clearConnectingTimer();
     this.renderSuppressedUntil = Date.now() + SHOW_OK_DELAY_MS;
     $SD.api.showOk(this.context);
@@ -364,6 +367,9 @@ DeskController.prototype.handleStatesChanged = function (entityStates) {
       this.renderSuppressedUntil = 0;
       this.lastRenderKey = '';
       this.render();
+      if (hadPendingToggle) {
+        this.selectNextPosition();
+      }
     }, SHOW_OK_DELAY_MS);
     return;
   }
@@ -513,7 +519,9 @@ DeskController.prototype.toggle = function () {
 
   const connectionEntity = this.getEntity(this.settings.deskConnectionEntityId);
   if (connectionEntity && connectionEntity.state === 'off') {
-    this.startConnecting();
+    this.pendingToggle = true;
+    this.connectDeskController();
+    return;
   }
 
   this.selectNextPosition();
