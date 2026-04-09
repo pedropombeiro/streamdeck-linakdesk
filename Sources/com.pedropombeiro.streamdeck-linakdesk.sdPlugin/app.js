@@ -346,34 +346,28 @@ DeskController.prototype.handleConnectionChange = function (isConnected) {
   this.render();
 };
 
-DeskController.prototype.clearConnectingTimer = function () {
-  if (this.connectingTimer) {
-    window.clearTimeout(this.connectingTimer);
-    this.connectingTimer = 0;
-  }
-};
-
 DeskController.prototype.handleStatesChanged = function (entityStates) {
   this.entityStates = entityStates || {};
-  const connectionEntity = this.getEntity(this.settings.deskConnectionEntityId);
-  if (this.connecting && connectionEntity && connectionEntity.state === 'on') {
-    const hadPendingToggle = this.pendingToggle;
-    this.connecting = false;
-    this.pendingToggle = false;
-    this.clearConnectingTimer();
-    this.renderSuppressedUntil = Date.now() + SHOW_OK_DELAY_MS;
-    $SD.api.showOk(this.context);
-    window.setTimeout(() => {
-      this.renderSuppressedUntil = 0;
-      this.lastRenderKey = '';
-      this.render();
-      if (hadPendingToggle) {
-        this.selectNextPosition();
-      }
-    }, SHOW_OK_DELAY_MS);
+  if (this.connecting && !this.isDisconnected()) {
+    this.handleConnectionEstablished();
     return;
   }
   this.render();
+};
+
+DeskController.prototype.handleConnectionEstablished = function () {
+  const hadPendingToggle = this.pendingToggle;
+  this.cancelConnecting();
+  this.renderSuppressedUntil = Date.now() + SHOW_OK_DELAY_MS;
+  $SD.api.showOk(this.context);
+  window.setTimeout(() => {
+    this.renderSuppressedUntil = 0;
+    this.lastRenderKey = '';
+    this.render();
+    if (hadPendingToggle) {
+      this.selectNextPosition();
+    }
+  }, SHOW_OK_DELAY_MS);
 };
 
 DeskController.prototype.getEntity = function (entityId) {
@@ -395,11 +389,89 @@ DeskController.prototype.isMoving = function () {
   return this.getMotionState() !== 'idle';
 };
 
-DeskController.prototype.clearPressTimer = function () {
-  if (this.pressTimer) {
-    window.clearTimeout(this.pressTimer);
-    this.pressTimer = 0;
+DeskController.prototype.isDisconnected = function () {
+  const connectionEntity = this.getEntity(this.settings.deskConnectionEntityId);
+  return connectionEntity && connectionEntity.state === 'off';
+};
+
+DeskController.prototype.updatePersistedState = function (stablePosition, height) {
+  let changed = false;
+  if (stablePosition && this.settings.lastKnownPosition !== stablePosition) {
+    this.settings.lastKnownPosition = stablePosition;
+    changed = true;
   }
+  if (height && this.settings.lastKnownHeight !== height) {
+    this.settings.lastKnownHeight = height;
+    changed = true;
+  }
+  if (changed) {
+    this.persistSettings();
+  }
+};
+
+DeskController.prototype.computeTitle = function (connecting, motion, stablePosition, height) {
+  if (connecting) {
+    return 'Connecting';
+  }
+  if (height) {
+    return height;
+  }
+  if (motion === 'up') {
+    return 'UP';
+  }
+  if (motion === 'down') {
+    return 'DOWN';
+  }
+  return stablePosition === 'standing' ? 'STAND' : 'SIT';
+};
+
+DeskController.prototype.computeViewModel = function () {
+  const standingEntity = this.getEntity(this.settings.deskStandingEntityId);
+  const heightEntity = this.getEntity(this.settings.deskHeightEntityId);
+  const coverEntity = this.getEntity(this.settings.deskCoverEntityId);
+
+  let stablePosition = this.settings.lastKnownPosition === 'standing' ? 'standing' : 'sitting';
+  if (standingEntity && standingEntity.state === 'on') {
+    stablePosition = 'standing';
+  } else if (standingEntity && standingEntity.state === 'off') {
+    stablePosition = 'sitting';
+  } else if (coverEntity && coverEntity.state === 'open') {
+    stablePosition = 'standing';
+  } else if (coverEntity && coverEntity.state === 'closed') {
+    stablePosition = 'sitting';
+  }
+
+  let motion = this.getMotionState();
+  const online = Boolean(this.connectionOnline && !this.isDisconnected());
+  if (!online) {
+    motion = 'idle';
+  }
+
+  const height = heightEntity ? parseHeight(heightEntity.state, heightEntity.attributes) : this.settings.lastKnownHeight;
+  if (motion === 'idle') {
+    this.updatePersistedState(stablePosition, height);
+  }
+
+  return {
+    image: (online && !this.connecting) ? `action/images/${stablePosition}` : `action/images/${stablePosition}-offline`,
+    state: stablePosition === 'standing' ? 1 : 0,
+    title: this.computeTitle(this.connecting, motion, stablePosition, height),
+  };
+};
+
+DeskController.prototype.render = function () {
+  if (this.renderSuppressedUntil && Date.now() < this.renderSuppressedUntil) {
+    return;
+  }
+  const model = this.computeViewModel();
+  const renderKey = [model.image, model.state, model.title].join('|');
+  if (renderKey === this.lastRenderKey) {
+    return;
+  }
+  this.lastRenderKey = renderKey;
+  $SD.api.send(this.context, 'setState', { payload: { state: model.state } });
+  $SD.api.setTitle(this.context, model.title);
+  $SD.api.setImage(this.context, model.image, 0);
 };
 
 DeskController.prototype.selectNextPosition = function () {
@@ -419,94 +491,6 @@ DeskController.prototype.selectNextPosition = function () {
   );
 };
 
-DeskController.prototype.computeViewModel = function () {
-  const standingEntity = this.getEntity(this.settings.deskStandingEntityId);
-  const connectionEntity = this.getEntity(this.settings.deskConnectionEntityId);
-  const heightEntity = this.getEntity(this.settings.deskHeightEntityId);
-  const coverEntity = this.getEntity(this.settings.deskCoverEntityId);
-
-  let stablePosition = this.settings.lastKnownPosition === 'standing' ? 'standing' : 'sitting';
-  if (standingEntity && standingEntity.state === 'on') {
-    stablePosition = 'standing';
-  } else if (standingEntity && standingEntity.state === 'off') {
-    stablePosition = 'sitting';
-  } else if (coverEntity && coverEntity.state === 'open') {
-    stablePosition = 'standing';
-  } else if (coverEntity && coverEntity.state === 'closed') {
-    stablePosition = 'sitting';
-  }
-
-  let motion = this.getMotionState();
-
-  const entityOnline = !connectionEntity || connectionEntity.state === 'on';
-  const online = Boolean(this.connectionOnline && entityOnline);
-  const connecting = this.connecting;
-  if (!online) {
-    motion = 'idle';
-  }
-
-  if (motion === 'idle' && this.settings.lastKnownPosition !== stablePosition) {
-    this.settings.lastKnownPosition = stablePosition;
-    this.persistSettings();
-  }
-
-  const height = heightEntity ? parseHeight(heightEntity.state, heightEntity.attributes) : this.settings.lastKnownHeight;
-  if (height && this.settings.lastKnownHeight !== height) {
-    this.settings.lastKnownHeight = height;
-    this.persistSettings();
-  }
-
-  let title = height || '';
-  if (connecting) {
-    title = 'Connecting';
-  }
-  if (!title) {
-    if (motion === 'up') {
-      title = 'UP';
-    } else if (motion === 'down') {
-      title = 'DOWN';
-    } else {
-      title = stablePosition === 'standing' ? 'STAND' : 'SIT';
-    }
-  }
-
-  return {
-    image: (online && !connecting) ? `action/images/${stablePosition}` : `action/images/${stablePosition}-offline`,
-    state: stablePosition === 'standing' ? 1 : 0,
-    title: title,
-  };
-};
-
-DeskController.prototype.render = function () {
-  if (this.renderSuppressedUntil && Date.now() < this.renderSuppressedUntil) {
-    return;
-  }
-  const model = this.computeViewModel();
-  const renderKey = [model.image, model.state, model.title].join('|');
-  if (renderKey === this.lastRenderKey) {
-    return;
-  }
-  this.lastRenderKey = renderKey;
-  $SD.api.send(this.context, 'setState', { payload: { state: model.state } });
-  $SD.api.setTitle(this.context, model.title);
-  $SD.api.setImage(this.context, model.image, 0);
-};
-
-DeskController.prototype.startConnecting = function () {
-  if (this.connecting) {
-    return;
-  }
-  this.connecting = true;
-  this.clearConnectingTimer();
-  this.connectingTimer = window.setTimeout(() => {
-    this.connecting = false;
-    this.connectingTimer = 0;
-    this.render();
-    $SD.api.showAlert(this.context);
-  }, CONNECTING_TIMEOUT_MS);
-  this.render();
-};
-
 DeskController.prototype.toggle = function () {
   if (!this.hasCredentials()) {
     $SD.api.showAlert(this.context);
@@ -517,8 +501,7 @@ DeskController.prototype.toggle = function () {
     return;
   }
 
-  const connectionEntity = this.getEntity(this.settings.deskConnectionEntityId);
-  if (connectionEntity && connectionEntity.state === 'off') {
+  if (this.isDisconnected()) {
     this.pendingToggle = true;
     this.connectDeskController();
     return;
@@ -541,13 +524,45 @@ DeskController.prototype.connectDeskController = function () {
     { entity_id: this.settings.deskConnectButtonEntityId },
     (response) => {
       if (!response || !response.success) {
-        this.connecting = false;
-        this.clearConnectingTimer();
-        this.render();
+        this.cancelConnecting();
         $SD.api.showAlert(this.context);
       }
     },
   );
+};
+
+DeskController.prototype.startConnecting = function () {
+  if (this.connecting) {
+    return;
+  }
+  this.connecting = true;
+  this.clearConnectingTimer();
+  this.connectingTimer = window.setTimeout(() => {
+    this.cancelConnecting();
+    $SD.api.showAlert(this.context);
+  }, CONNECTING_TIMEOUT_MS);
+  this.render();
+};
+
+DeskController.prototype.cancelConnecting = function () {
+  this.connecting = false;
+  this.pendingToggle = false;
+  this.clearConnectingTimer();
+  this.render();
+};
+
+DeskController.prototype.clearConnectingTimer = function () {
+  if (this.connectingTimer) {
+    window.clearTimeout(this.connectingTimer);
+    this.connectingTimer = 0;
+  }
+};
+
+DeskController.prototype.clearPressTimer = function () {
+  if (this.pressTimer) {
+    window.clearTimeout(this.pressTimer);
+    this.pressTimer = 0;
+  }
 };
 
 DeskController.prototype.handleKeyDown = function () {
