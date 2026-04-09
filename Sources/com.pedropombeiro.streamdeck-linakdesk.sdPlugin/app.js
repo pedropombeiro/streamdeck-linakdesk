@@ -15,6 +15,8 @@ const DEFAULT_SETTINGS = {
 };
 const RECONNECT_DELAY_MS = 3000;
 const LONG_PRESS_DELAY_MS = 600;
+const CONNECTING_TIMEOUT_MS = 10000;
+const SHOW_OK_DELAY_MS = 1500;
 
 function normalizeSettings(settings) {
   const normalized = Object.assign({}, DEFAULT_SETTINGS);
@@ -309,6 +311,9 @@ function DeskController(jsonObj) {
   this.pressTimer = 0;
   this.longPressTriggered = false;
   this.keyIsDown = false;
+  this.connecting = false;
+  this.connectingTimer = 0;
+  this.renderSuppressedUntil = 0;
 }
 
 DeskController.prototype.hasCredentials = function () {
@@ -340,8 +345,28 @@ DeskController.prototype.handleConnectionChange = function (isConnected) {
   this.render();
 };
 
+DeskController.prototype.clearConnectingTimer = function () {
+  if (this.connectingTimer) {
+    window.clearTimeout(this.connectingTimer);
+    this.connectingTimer = 0;
+  }
+};
+
 DeskController.prototype.handleStatesChanged = function (entityStates) {
   this.entityStates = entityStates || {};
+  const connectionEntity = this.getEntity(this.settings.deskConnectionEntityId);
+  if (this.connecting && connectionEntity && connectionEntity.state === 'on') {
+    this.connecting = false;
+    this.clearConnectingTimer();
+    this.renderSuppressedUntil = Date.now() + SHOW_OK_DELAY_MS;
+    $SD.api.showOk(this.context);
+    window.setTimeout(() => {
+      this.renderSuppressedUntil = 0;
+      this.lastRenderKey = '';
+      this.render();
+    }, SHOW_OK_DELAY_MS);
+    return;
+  }
   this.render();
 };
 
@@ -381,7 +406,9 @@ DeskController.prototype.selectNextPosition = function () {
         $SD.api.showAlert(this.context);
         return;
       }
-      $SD.api.showOk(this.context);
+      if (!this.connecting) {
+        $SD.api.showOk(this.context);
+      }
     },
   );
 };
@@ -407,6 +434,7 @@ DeskController.prototype.computeViewModel = function () {
 
   const entityOnline = !connectionEntity || connectionEntity.state === 'on';
   const online = Boolean(this.connectionOnline && entityOnline);
+  const connecting = this.connecting;
   if (!online) {
     motion = 'idle';
   }
@@ -423,6 +451,9 @@ DeskController.prototype.computeViewModel = function () {
   }
 
   let title = height || '';
+  if (connecting) {
+    title = 'Connecting';
+  }
   if (!title) {
     if (motion === 'up') {
       title = 'UP';
@@ -434,13 +465,16 @@ DeskController.prototype.computeViewModel = function () {
   }
 
   return {
-    image: online ? `action/images/${stablePosition}` : `action/images/${stablePosition}-offline`,
+    image: (online && !connecting) ? `action/images/${stablePosition}` : `action/images/${stablePosition}-offline`,
     state: stablePosition === 'standing' ? 1 : 0,
     title: title,
   };
 };
 
 DeskController.prototype.render = function () {
+  if (this.renderSuppressedUntil && Date.now() < this.renderSuppressedUntil) {
+    return;
+  }
   const model = this.computeViewModel();
   const renderKey = [model.image, model.state, model.title].join('|');
   if (renderKey === this.lastRenderKey) {
@@ -452,10 +486,34 @@ DeskController.prototype.render = function () {
   $SD.api.setImage(this.context, model.image, 0);
 };
 
+DeskController.prototype.startConnecting = function () {
+  if (this.connecting) {
+    return;
+  }
+  this.connecting = true;
+  this.clearConnectingTimer();
+  this.connectingTimer = window.setTimeout(() => {
+    this.connecting = false;
+    this.connectingTimer = 0;
+    this.render();
+    $SD.api.showAlert(this.context);
+  }, CONNECTING_TIMEOUT_MS);
+  this.render();
+};
+
 DeskController.prototype.toggle = function () {
   if (!this.hasCredentials()) {
     $SD.api.showAlert(this.context);
     return;
+  }
+
+  if (this.connecting) {
+    return;
+  }
+
+  const connectionEntity = this.getEntity(this.settings.deskConnectionEntityId);
+  if (connectionEntity && connectionEntity.state === 'off') {
+    this.startConnecting();
   }
 
   this.selectNextPosition();
@@ -467,16 +525,19 @@ DeskController.prototype.connectDeskController = function () {
     return;
   }
 
+  this.startConnecting();
+
   homeAssistant.callService(
     'button',
     'press',
     { entity_id: this.settings.deskConnectButtonEntityId },
     (response) => {
       if (!response || !response.success) {
+        this.connecting = false;
+        this.clearConnectingTimer();
+        this.render();
         $SD.api.showAlert(this.context);
-        return;
       }
-      $SD.api.showOk(this.context);
     },
   );
 };
