@@ -315,6 +315,7 @@ function DeskController(jsonObj) {
   this.connectingTimer = 0;
   this.renderSuppressedUntil = 0;
   this.pendingToggle = false;
+  this.lastConnectButtonState = '';
 }
 
 DeskController.prototype.hasCredentials = function () {
@@ -352,7 +353,24 @@ DeskController.prototype.handleStatesChanged = function (entityStates) {
     this.handleConnectionEstablished();
     return;
   }
+  this.detectExternalConnect();
   this.render();
+};
+
+DeskController.prototype.detectExternalConnect = function () {
+  const connectButtonEntity = this.getEntity(this.settings.deskConnectButtonEntityId);
+  if (!connectButtonEntity) {
+    return;
+  }
+  const currentState = connectButtonEntity.state;
+  const previousState = this.lastConnectButtonState;
+  this.lastConnectButtonState = currentState;
+  if (!previousState || previousState === currentState) {
+    return;
+  }
+  if (!this.connecting) {
+    this.startConnecting();
+  }
 };
 
 DeskController.prototype.handleConnectionEstablished = function () {
